@@ -1,6 +1,6 @@
 # web-crawler
 Trying out Go's concurrency features to parallelize a web crawler. 
-Able to crawl 100,000 pages in 30 seconds.
+Currently able to crawl 100,000 pages in 30 seconds.
 
 ### To Fix / Enhance
 ---
