@@ -2,34 +2,25 @@ package main
 
 import (
 	"Crawler/Crawler"
-	"fmt"
 	"sync"
 )
 
-/*
-  Things to do:
-  1. Separate into different function
-  2. Visit
-  3. Prevent loop
-  4. Multithreaded
-  5. ..
-*/
-
 func main() {
-	spider := crawl.NewSpider()
+	urlChannel := make(chan string)
+	processChannel := make(chan string)
+	monitorChannel := make(chan int)
 	var wg sync.WaitGroup
 
 	go func() {
-		spider.UrlChannel <- "https://youtube.com"
+		urlChannel <- "https://en.wikipedia.org/wiki/Main_Page"
+		monitorChannel <- 1
 	}()
 
-	wg.Add(1)
-	go spider.Start(&wg)
-	// go spider.Monitor(&wg)
-
+	go crawl.Process(urlChannel, processChannel, monitorChannel)
+	go crawl.Monitor(urlChannel, processChannel, monitorChannel)
+	for i := 0; i < 10000; i++ {
+		wg.Add(1)
+		go crawl.Crawl(urlChannel, processChannel, monitorChannel, &wg)
+	}
 	wg.Wait()
-	// for _, url := range spider.Result.GetAllResult() {
-	// 	fmt.Println(url)
-	// }
-	fmt.Println(len(spider.Result.GetAllResult()))
 }

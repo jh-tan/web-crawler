@@ -2,104 +2,60 @@ package crawl
 
 import (
 	"Crawler/Parser"
+	"fmt"
 	"net/http"
 	"net/url"
 	"sync"
 )
 
-type SafeMap struct {
-	v   map[string]bool
-	mux sync.Mutex
-}
-
-type SafeResult struct {
-	url []string
-	mux sync.Mutex
-}
-
-// SetVal sets the value for the given key.
-func (m *SafeMap) SetVal(key string, val bool) {
-	m.mux.Lock()
-	m.v[key] = val
-	m.mux.Unlock()
-}
-
-// Value returns the current value of the counter for the given key.
-func (m *SafeMap) GetVal(key string) bool {
-	m.mux.Lock()
-	defer m.mux.Unlock()
-	return m.v[key]
-}
-
-func (r *SafeResult) AppendURL(url string) {
-	r.mux.Lock()
-	r.url = append(r.url, url)
-	r.mux.Unlock()
-}
-
-// Value returns the current value of the counter for the given key.
-func (r *SafeResult) GetAllResult() []string {
-	r.mux.Lock()
-	defer r.mux.Unlock()
-	return r.url
-}
-
-type Spider struct {
-	UrlChannel      chan string
-	progressChannel chan bool
-	Result          *SafeResult
-	seen            *SafeMap
-}
-
-func NewSpider() *Spider {
-	return &Spider{
-		UrlChannel:      make(chan string),
-		progressChannel: make(chan bool),
-		Result:          &SafeResult{url: make([]string, 0)},
-		seen:            &SafeMap{v: make(map[string]bool)},
-	}
-}
-
-func (spider *Spider) Start(wg *sync.WaitGroup) {
-
-	for {
-		select {
-    // TO CHANGE
-		case url := <-spider.UrlChannel:
-			go Crawl(url, spider)
-		case <-spider.progressChannel:
-			wg.Done()
+func Crawl(worklist, process chan string, monitor chan int, wg *sync.WaitGroup) {
+	for link := range worklist {
+		parsedLink, err := FetchPage(link)
+		monitor <- len(parsedLink)
+		if err != nil || len(parsedLink) == 0 {
 			return
 		}
+		for _, link := range parsedLink {
+			go func(link string) {
+				process <- link
+			}(link)
+		}
 	}
-
+	wg.Done()
 }
 
-func Crawl(rootURL string, spider *Spider) {
-	parsedLink, err := fetchPage(rootURL)
-	if err != nil {
-		return
-	}
-
-	for _, url := range parsedLink {
-		if spider.seen.GetVal(url) {
-			continue
+func Process(worklist, process chan string, monitor chan int) {
+	i := 1
+	seen := make(map[string]struct{})
+	for link := range process {
+		monitor <- -1
+		if _, ok := seen[link]; !ok {
+			seen[link] = struct{}{}
+			fmt.Println(i, link)
+			i++
+			go func(link string) {
+				worklist <- link
+			}(link)
 		}
-		if len(spider.Result.GetAllResult()) >= 50000 {
-			spider.progressChannel <- true
-			break
-		}
-		spider.seen.SetVal(url, true)
-		spider.Result.AppendURL(url)
-		spider.UrlChannel <- url
 	}
-
 }
 
-func fetchPage(links string) ([]string, error) {
+func Monitor(work, process chan string, monitor chan int) {
+	count := 0
+	for i := range monitor {
+		count += i
+		// fmt.Println("Remaining: ", count, "Channel: ", i)
+		if count == 0 {
+			close(work)
+			close(process)
+			close(monitor)
+		}
+	}
+}
+
+func FetchPage(links string) ([]string, error) {
 	resp, err := http.Get(links)
 	if err != nil {
-		// fmt.Println("Server unable to reach")
 		return []string{}, err
 	}
 	defer resp.Body.Close()
