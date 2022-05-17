@@ -5,52 +5,39 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"sync"
 )
 
-func Crawl(worklist, process chan string, monitor chan int, wg *sync.WaitGroup) {
-	for link := range worklist {
-		parsedLink, err := FetchPage(link)
-		monitor <- len(parsedLink)
-		if err != nil || len(parsedLink) == 0 {
-			return
-		}
-		for _, link := range parsedLink {
-			go func(link string) {
-				process <- link
-			}(link)
-		}
-	}
-	wg.Done()
-}
-
-func Process(worklist, process chan string, monitor chan int) {
-	i := 1
+func Crawl(worklist chan []string, processedLink chan string) {
+	i, n := 1, 1
 	seen := make(map[string]struct{})
-	for link := range process {
-		monitor <- -1
-		if _, ok := seen[link]; !ok {
-			seen[link] = struct{}{}
-			fmt.Println(i, link)
-			i++
-			go func(link string) {
-				worklist <- link
-			}(link)
-		}
-	}
-}
 
-func Monitor(work, process chan string, monitor chan int) {
-	count := 0
-	for i := range monitor {
-		count += i
-		// fmt.Println("Remaining: ", count, "Channel: ", i)
-		if count == 0 {
-			close(work)
-			close(process)
-			close(monitor)
+	for i := 0; i < 10000; i++ {
+		go func() {
+			for link := range processedLink {
+				parsedLink, err := FetchPage(link)
+				if err != nil {
+					continue
+				}
+				go func() {
+					worklist <- parsedLink
+				}()
+			}
+		}()
+	}
+
+	for ; n > 0; n-- {
+		list := <-worklist
+		for _, link := range list {
+			if _, ok := seen[link]; !ok {
+				seen[link] = struct{}{}
+				fmt.Println(i, link)
+				i++
+				n++
+				processedLink <- link
+			}
 		}
 	}
+	close(processedLink)
 }
 
 func FetchPage(links string) ([]string, error) {
