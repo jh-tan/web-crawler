@@ -12,3 +12,4 @@ Tested Site:
 ### Current Issue
  - Stability
  - Unable to close the channel and stop the program properly
+ - Get rate limited easily, and the program will just stuck there.
